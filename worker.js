@@ -26,12 +26,16 @@ const saveToday   = async (env,v) => env.KV.put("today", JSON.stringify(v));
 
 // ---------- NewAPI 交互（仅需 token） ----------
 function headers(site) {
+  const origin = site.base_url.replace(/\/+$/,"");
   const h = {
     "Authorization": "Bearer " + site.token,
     "Content-Type": "application/json",
-    "Accept": "application/json",
+    "Accept": "application/json, text/plain, */*",
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36",
     "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+    "Origin": origin,
+    "Referer": origin + "/console",
+    "X-Requested-With": "XMLHttpRequest",
   };
   if (site.user_id) h["new-api-user"] = String(site.user_id);
   return h;
@@ -283,7 +287,7 @@ function page() {
 '}'+
 'if(T){$("auth").classList.add("hidden");$("app").classList.remove("hidden");init();}'+
 
-'async function api(p,o){'+
+'async function api(p,o={}){'+
 '  const r=await fetch(p,{...o,headers:{...(o.headers||{}),"x-admin-token":T}});'+
 '  if(r.status===401){localStorage.removeItem("admin_token");T="";$("app").classList.add("hidden");$("auth").classList.remove("hidden");$("loginErr").style.display="block";$("loginErr").textContent="登录已过期，请重新输入密码";return {};}'+
 '  return r.json();'+
@@ -299,20 +303,24 @@ function page() {
 '}'+
 
 'async function init(){'+
+'  try{'+
 '  const origin=location.origin;'+
 '  $("bm").href="javascript:(function(){try{var t=localStorage.getItem(\'token\')||\'\';var u=JSON.parse(localStorage.getItem(\'user\')||\'{}\');var d=btoa(JSON.stringify({name:location.hostname.split(\'.\')[0],url:location.origin,token:t,userId:u.id||\'\'}));location.href=\'"+origin+"/?import=\'+d;}catch(e){alert(\'提取失败，请先登录站点\');}})();";'+
 '  const imp=new URLSearchParams(location.search).get("import");'+
 '  if(imp){try{const d=JSON.parse(atob(imp));$("addForm").name.value=d.name||"";$("addForm").base_url.value=d.url||"";$("addForm").token.value=d.token||"";$("addForm").user_id.value=d.userId||"";}catch(e){}}'+
 '  document.querySelectorAll(".tab").forEach(t=>t.addEventListener("click",()=>switchTab(t.dataset.tab)));'+
 '  loadSites();'+
+'  }catch(e){alert("初始化错误:"+e.message);}'+
 '}'+
 
 'async function loadSites(){'+
+'  try{'+
 '  const d=await api("/api/sites");'+
 '  $("siteCount").textContent=d.sites?("("+d.sites.length+")"):"";'+
 '  const el=$("siteList");'+
 '  if(!d.sites||!d.sites.length){el.innerHTML=\'<p class="muted">还没有站点，在上方添加</p>\';return;}'+
-'  el.innerHTML=d.sites.map(s=>\'<div class="site-item"><div><div class="site-name">\'+s.name+\'</div><div class="site-url">\'+s.base_url+\'</div></div><button class="danger" data-del="\'+s.id+\'">删除</button></div>\').join("");'+
+'  el.innerHTML=d.sites.map(s=>\'<div class="site-item"><div><div class="site-name">\'+s.name+\'</div><div class="site-url">\'+s.base_url+(s.user_id?\' · ID:\'+s.user_id:\'\')+\'</div></div><button class="danger" data-del="\'+s.id+\'">删除</button></div>\').join("");'+
+'  }catch(e){$("siteList").innerHTML=\'<p style="color:#ff3b30">加载失败:\'+e.message+\'</p>\';}'+
 '}'+
 
 'async function batchAdd(){'+
@@ -331,6 +339,7 @@ function page() {
 '}'+
 
 'async function loadDashboard(){'+
+'  try{'+
 '  const [sites,status]=await Promise.all([api("/api/sites"),api("/api/status")]);'+
 '  const list=sites.sites||[];'+
 '  const results=(status.state&&status.state.results)||[];'+
@@ -351,12 +360,13 @@ function page() {
 '      \'<div class="muted">计划时间（北京时间）：\'+st.target_bj_hour+\':00 左右</div>\'+'+
 '      \'<div class="muted">状态：\'+(st.done?\'已完成\':\'等待中\')+\'</div>\';'+
 '  }'+
+'  }catch(e){$("dashboardList").innerHTML=\'<p style="color:#ff3b30">加载失败:\'+e.message+\'</p>\';}'+
 '}'+
 
 'async function manualRun(){if(!confirm("立即签到全部站点？"))return;await api("/api/run",{method:"POST"});loadDashboard();}'+
 'async function saveSettings(){await api("/api/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({tg_bot_token:$("tg_token").value,tg_chat_id:$("tg_chat").value,tg_enabled:$("tg_enabled").checked})});alert("已保存");}'+
 'async function testTG(){const d=await api("/api/test-tg",{method:"POST"});alert(d.ok?"测试消息已发送":"发送失败，请检查 Token 和 Chat ID");}'+
-'async function loadSettings(){const d=await api("/api/settings");$("tg_token").value=d.tg_bot_token||"";$("tg_chat").value=d.tg_chat_id||"";$("tg_enabled").checked=!!d.tg_enabled;}'+
+'async function loadSettings(){try{const d=await api("/api/settings");$("tg_token").value=d.tg_bot_token||"";$("tg_chat").value=d.tg_chat_id||"";$("tg_enabled").checked=!!d.tg_enabled;}catch(e){}}'+
 
 'document.addEventListener("click",async e=>{'+
 '  if(e.target.matches("[data-del]")){'+
@@ -369,7 +379,7 @@ function page() {
 '  }'+
 '});'+
 
-'$("addForm").addEventListener("submit",async e=>{e.preventDefault();const fd=new FormData(e.target);await api("/api/sites",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(Object.fromEntries(fd.entries()))});e.target.reset();loadSites();alert("添加成功");});'+
+'$("addForm").addEventListener("submit",async e=>{e.preventDefault();const fd=new FormData(e.target);const d=await api("/api/sites",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(Object.fromEntries(fd.entries()))});if(d.ok){e.target.reset();loadSites();alert("添加成功");}else{alert("添加失败："+(d.error||"未知错误"));}});'+
 '</script></body></html>';
 }
 
@@ -385,6 +395,8 @@ async function handleApi(request, env) {
     const b = await request.json();
     if (!b.name||!b.base_url||!b.token) return json({error:"缺少字段"},400);
     const sites = await getSites(env);
+    const dup = sites.find(s=>s.base_url===b.base_url && String(s.user_id||"")===String(b.user_id||""));
+    if (dup) return json({error:"该站点（网址+用户ID）已存在，请勿重复添加"},409);
     sites.push({id:uid(),name:b.name,base_url:b.base_url,token:b.token,user_id:b.user_id||""});
     await saveSites(env, sites);
     return json({ok:true});
@@ -394,12 +406,15 @@ async function handleApi(request, env) {
     const b = await request.json();
     if (!Array.isArray(b.sites)||!b.sites.length) return json({error:"没有站点数据"},400);
     const sites = await getSites(env);
-    let added = 0;
+    let added = 0, skipped = 0;
     for (const s of b.sites) {
-      if (s.name&&s.base_url&&s.token) { sites.push({id:uid(),name:s.name,base_url:s.base_url,token:s.token,user_id:s.user_id||""}); added++; }
+      if (!s.name||!s.base_url||!s.token) continue;
+      const dup = sites.find(x=>x.base_url===s.base_url && String(x.user_id||"")===String(s.user_id||""));
+      if (dup) { skipped++; continue; }
+      sites.push({id:uid(),name:s.name,base_url:s.base_url,token:s.token,user_id:s.user_id||""}); added++;
     }
     await saveSites(env, sites);
-    return json({ok:true, added});
+    return json({ok:true, added, skipped});
   }
 
   const dm = p.match(/^\/api\/sites\/(.+)$/);
@@ -413,6 +428,28 @@ async function handleApi(request, env) {
   if (cm && request.method==="POST") {
     const outcome = await runCheckIn(env, cm[1]);
     return json({ok:true, outcome});
+  }
+
+  // 调试接口：返回签到请求的原始响应
+  const dbg = p.match(/^\/api\/debug\/(.+)$/);
+  if (dbg && request.method==="POST") {
+    const sites = await getSites(env);
+    const site = sites.find(s=>s.id===dbg[1]);
+    if (!site) return json({error:"站点不存在"},404);
+    const base = site.base_url.replace(/\/+$/,"");
+    const h = headers(site);
+    const out = { headers_sent:h };
+    try {
+      const r1 = await fetch(base+"/api/user/self", {headers:h});
+      out.self_status = r1.status;
+      out.self_body = (await r1.text()).slice(0,500);
+    } catch(e) { out.self_error = String(e); }
+    try {
+      const r2 = await fetch(base+"/api/user/checkin", {method:"POST", headers:h});
+      out.checkin_status = r2.status;
+      out.checkin_body = (await r2.text()).slice(0,500);
+    } catch(e) { out.checkin_error = String(e); }
+    return json({ok:true, ...out});
   }
 
   if (p==="/api/settings" && request.method==="GET") return json(await getSettings(env));
@@ -446,7 +483,7 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     if (url.pathname.startsWith("/api/")) return handleApi(request, env);
-    return new Response(page(), {headers:{"Content-Type":"text/html; charset=utf-8"}});
+    return new Response(page(), {headers:{"Content-Type":"text/html; charset=utf-8","Cache-Control":"no-store, no-cache, must-revalidate"}});
   },
   async scheduled(event, env, ctx) { ctx.waitUntil(handleScheduled(env)); },
 };
