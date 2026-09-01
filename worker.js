@@ -367,7 +367,9 @@ function page() {
 '  }'+
 '  if(e.target.matches("[data-checkin]")){'+
 '    const btn=e.target;btn.disabled=true;btn.textContent="签到中...";'+
-'    await api("/api/checkin/"+btn.dataset.checkin,{method:"POST"});'+
+'    const d=await api("/api/checkin/"+btn.dataset.checkin,{method:"POST"});'+
+'    const r=(d.outcome&&d.outcome.results&&d.outcome.results[0]);'+
+'    if(r){alert(r.success?("✅ 签到成功！获得 "+Number(r.gained||0).toLocaleString()+(r.remain!=null?"，余额 "+Number(r.remain).toLocaleString():"")):("❌ 签到失败："+r.message));}'+
 '    loadDashboard();'+
 '  }'+
 '});'+
@@ -387,10 +389,11 @@ async function handleApi(request, env) {
   if (p==="/api/sites" && request.method==="POST") {
     const b = await request.json();
     if (!b.name||!b.base_url||!b.token) return json({error:"缺少字段"},400);
+    b.token = (b.token||"").trim(); b.base_url=(b.base_url||"").trim().replace(/\/+$/,""); b.user_id=(b.user_id||"").trim();
     const sites = await getSites(env);
     const dup = sites.find(s=>s.base_url===b.base_url && String(s.user_id||"")===String(b.user_id||""));
     if (dup) return json({error:"该站点（网址+用户ID）已存在，请勿重复添加"},409);
-    sites.push({id:uid(),name:b.name,base_url:b.base_url,token:b.token,user_id:b.user_id||""});
+    sites.push({id:uid(),name:b.name,base_url:b.base_url,token:b.token,user_id:b.user_id});
     await saveSites(env, sites);
     return json({ok:true});
   }
