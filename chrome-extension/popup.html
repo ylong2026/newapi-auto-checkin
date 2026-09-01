@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{width:420px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#f5f5f7;color:#1d1d1f;padding:12px;font-size:13px}
+body{width:400px;max-height:600px;overflow-y:auto;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#f5f5f7;color:#1d1d1f;padding:12px;font-size:13px}
 h1{font-size:16px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center}
 h2{font-size:13px;margin-bottom:6px;color:#333}
 .card{background:#fff;border-radius:10px;padding:10px;margin-bottom:10px;box-shadow:0 1px 3px rgba(0,0,0,.07)}
@@ -16,30 +16,35 @@ button:hover{background:#0077ed}
 button.danger{background:#ff3b30}
 button.ghost{background:#e8e8ed;color:#1d1d1f}
 button:disabled{opacity:.5;cursor:not-allowed}
+.primary-block{display:block;width:100%;padding:9px;font-size:13px;font-weight:600;margin-bottom:10px}
 .row{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
-.tabs{display:flex;gap:2px;margin-bottom:10px;background:#fff;border-radius:8px;padding:3px;box-shadow:0 1px 3px rgba(0,0,0,.07)}
+.tabs{display:flex;gap:2px;margin-bottom:10px;background:#fff;border-radius:8px;padding:3px;box-shadow:0 1px 3px rgba(0,0,0,.07);position:sticky;top:-12px;z-index:5}
 .tab{flex:1;padding:7px;border:none;background:transparent;color:#666;font-size:12px;border-radius:6px;cursor:pointer;font-weight:500}
 .tab.active{background:#0071e3;color:#fff}
 .site-item{display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid #f0f0f0}
 .site-item:last-child{border-bottom:none}
 .site-name{font-size:13px;font-weight:500}
 .site-url{font-size:10px;color:#999;margin-top:1px}
-.site-actions{display:flex;gap:4px}
+.site-actions{display:flex;gap:4px;flex-shrink:0}
 .site-actions button{padding:4px 8px;font-size:11px}
 .tag{display:inline-block;padding:1px 6px;border-radius:3px;font-size:10px;margin-left:4px}
 .ok{background:#e8f5e9;color:#2e7d32}.fail{background:#ffebee;color:#c62828}.wait{background:#fff3e0;color:#e65100}.off{background:#eee;color:#999}
 .hidden{display:none}
-.muted{color:#888;font-size:11px}
+.muted{color:#888;font-size:11px;font-weight:400}
 .log-item{padding:5px 0;border-bottom:1px solid #f0f0f0;font-size:11px}
 .log-item:last-child{border-bottom:none}
 .log-time{color:#999;font-size:10px}
-details{margin-top:6px}
-summary{cursor:pointer;font-size:11px;color:#0071e3;padding:2px 0}
+details summary{cursor:pointer;font-size:12px;color:#0071e3;padding:4px 0;list-style:none}
+details summary::before{content:"▸ ";}
+details[open] summary::before{content:"▾ ";}
+.detect-card{background:linear-gradient(135deg,#f0f4ff,#eef6ff);border:1px solid #d6e4ff}
+.detect-card #detectInfo{font-size:12px;line-height:1.5;margin-bottom:6px;color:#444}
+.manual-card summary{font-weight:500}
 .next-time{font-size:11px;color:#666;background:#f0f4ff;padding:6px 8px;border-radius:6px;margin-bottom:8px}
 </style>
 </head>
 <body>
-<h1>NewAPI 自动签到 <span id="nextTime" class="muted" style="font-size:11px;font-weight:400"></span></h1>
+<h1>NewAPI 自动签到 <span id="nextTime" class="muted"></span></h1>
 
 <div class="tabs">
   <button class="tab active" data-tab="sites">站点</button>
@@ -49,23 +54,28 @@ summary{cursor:pointer;font-size:11px;color:#0071e3;padding:2px 0}
 
 <!-- 站点管理 -->
 <div id="tab-sites" class="tab-content">
+  <button type="button" id="runAllBtn" class="primary-block">全部签到</button>
+
+  <div class="card detect-card" id="detectCard">
+    <h2>一键添加当前站点 <span class="hint">在已登录的站点页面点这里</span></h2>
+    <div id="detectInfo">正在检测当前页面...</div>
+    <button type="button" id="autoAddBtn" class="hidden primary-block" style="margin-bottom:0">一键添加当前站点</button>
+  </div>
+
   <div class="card">
     <h2>已添加站点 <span id="siteCount" class="muted"></span></h2>
     <div id="siteList"></div>
   </div>
-  <div class="card">
-    <h2 id="formTitle">添加站点</h2>
-    <div id="autoDetect" style="margin-bottom:8px;padding:8px;background:#f0f4ff;border-radius:6px">
-      <div style="font-size:12px;margin-bottom:4px" id="detectInfo">正在检测当前页面...</div>
-      <button type="button" id="autoAddBtn" class="hidden" style="width:100%">一键添加当前站点</button>
-    </div>
-    <form id="addForm">
+
+  <details class="card manual-card" id="manualBox">
+    <summary>手动添加 / 编辑（通常用不上，一键添加即可）</summary>
+    <form id="addForm" style="margin-top:8px">
       <label>站点名称 <span class="hint">自己好认</span></label>
-      <input name="name" placeholder="如 tabitoken" required>
+      <input name="name" placeholder="如 tabitoken">
       <label>站点网址 <span class="hint">首页地址，末尾不要斜杠</span></label>
-      <input name="base_url" placeholder="https://example.com" required>
-      <label>数字用户 ID <span class="hint">个人设置页的纯数字 ID，建议填写</span></label>
-      <input name="user_id" placeholder="纯数字 ID">
+      <input name="base_url" placeholder="https://example.com">
+      <label>数字用户 ID <span class="hint">可选，一般会自动识别</span></label>
+      <input name="user_id" placeholder="纯数字 ID（可留空）">
       <details>
         <summary>高级：系统访问令牌（可选）</summary>
         <label style="margin-top:6px">系统访问令牌 <span class="hint">不填则用浏览器登录态自动签到</span></label>
@@ -73,11 +83,10 @@ summary{cursor:pointer;font-size:11px;color:#0071e3;padding:2px 0}
       </details>
       <div class="row" style="margin-top:8px">
         <button type="submit" id="submitBtn">添加站点</button>
-        <button type="button" class="ghost hidden" id="cancelEdit">取消</button>
-        <button type="button" class="ghost" id="runAllBtn" style="margin-left:auto">全部签到</button>
+        <button type="button" class="ghost hidden" id="cancelEdit">取消编辑</button>
       </div>
     </form>
-  </div>
+  </details>
 </div>
 
 <!-- 签到记录 -->
@@ -106,7 +115,7 @@ summary{cursor:pointer;font-size:11px;color:#0071e3;padding:2px 0}
   </div>
   <div class="card">
     <h2>说明</h2>
-    <p class="muted" style="line-height:1.5;font-size:11px">打开浏览器后 30~180 秒内自动检查今天是否已签到，没签就自动签。每天只签一次。遇到 Turnstile 或 WAF 拦截的站点会自动用浏览器标签页签到（后台静默打开再关闭）。多站间隔 3~15 秒。</p>
+    <p class="muted" style="line-height:1.6;font-size:11px">打开浏览器后 30~180 秒内自动检查今天是否已签到，没签就自动签，每天只签一次。签到在后台静默打开站点页面完成（需要浏览器里保持登录态）。若站点开启了 Cloudflare 人机验证，需当前网络能访问 challenges.cloudflare.com（即和你手动签到时一样的网络）。多站间隔 3~15 秒。</p>
   </div>
 </div>
 

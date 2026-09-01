@@ -44,25 +44,25 @@ function fillForm(s) {
   $("addForm").base_url.value = s.base_url;
   $("addForm").token.value = s.token || "";
   $("addForm").user_id.value = s.user_id || "";
-  $("formTitle").textContent = "编辑站点：" + s.name;
   $("submitBtn").textContent = "保存修改";
   $("cancelEdit").classList.remove("hidden");
-  $("autoDetect").classList.add("hidden");
+  $("manualBox").open = true;
+  $("detectCard").classList.add("hidden");
 }
 function cancelEdit() {
   editingId = "";
   $("addForm").reset();
-  $("formTitle").textContent = "添加站点";
   $("submitBtn").textContent = "添加站点";
   $("cancelEdit").classList.add("hidden");
+  $("detectCard").classList.remove("hidden");
   detectCurrentTab();
 }
 $("cancelEdit").addEventListener("click", cancelEdit);
 
 // 自动检测当前标签页是否为 NewAPI 站点
 async function detectCurrentTab() {
-  if (editingId) { $("autoDetect").classList.add("hidden"); return; }
-  $("autoDetect").classList.remove("hidden");
+  if (editingId) { $("detectCard").classList.add("hidden"); return; }
+  $("detectCard").classList.remove("hidden");
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab || !tab.url || !tab.url.startsWith("http")) {
@@ -163,7 +163,13 @@ document.addEventListener("click", async e => {
     btn.textContent = "签到";
     if (d.result) {
       const r = d.result;
-      alert(r.success ? ("✅ 签到成功！获得 " + fmt(r.gained) + (r.remain != null ? "，余额 " + fmt(r.remain) : "")) : ("❌ 签到失败：" + r.message));
+      if (!r.success) {
+        alert("❌ 签到失败：" + r.message);
+      } else if (r.already) {
+        alert("✅ 今日已签到" + (r.remain != null ? "，余额 " + fmt(r.remain) : ""));
+      } else {
+        alert("✅ 签到成功！获得 " + fmt(r.gained) + (r.remain != null ? "，余额 " + fmt(r.remain) : ""));
+      }
     } else {
       alert("签到失败：" + (d.error || "未知错误"));
     }
@@ -193,10 +199,11 @@ async function loadLogs() {
   el.innerHTML = logs.slice(0, 50).map(l => {
     const t = new Date(l.time).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
     const icon = l.success ? "✅" : "❌";
-    const gain = l.success && l.gained ? " +" + fmt(l.gained) : "";
+    const label = l.already ? "（今日已签）" : ((l.success && l.gained) ? " +" + fmt(l.gained) : "");
     const remain = l.remain != null ? " 余额:" + fmt(l.remain) : "";
-    return '<div class="log-item">' + icon + ' ' + l.name + gain + remain +
-      '<div class="log-time">' + t + (l.success ? "" : " · " + l.message) + '</div></div>';
+    const nm = l.name || "站点";
+    return '<div class="log-item">' + icon + ' ' + nm + label + remain +
+      '<div class="log-time">' + t + (l.success ? "" : " · " + (l.message || "")) + '</div></div>';
   }).join("");
 }
 

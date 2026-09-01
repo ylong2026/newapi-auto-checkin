@@ -81,6 +81,42 @@ async function checkinByFetch(site) {
   }
 }
 
+// 等待标签页加载完成且 URL 稳定（应对 /console → /dashboard 重定向，避免 Frame removed）
+async function waitTabStable(tabId) {
+  await new Promise((resolve) => {
+    let done = false;
+    const fin = () => { if (!done) { done = true; try { chrome.tabs.onUpdated.removeListener(onUp); } catch (e) {} resolve(); } };
+    const onUp = (id, info) => { if (id === tabId && info.status === "complete") setTimeout(fin, 1200); };
+    chrome.tabs.onUpdated.addListener(onUp);
+    setTimeout(fin, 15000);
+  });
+  let last = "", n = 0;
+  for (let i = 0; i < 15; i++) {
+    const t = await chrome.tabs.get(tabId).catch(() => null);
+    const u = t ? t.url : "";
+    if (u === last && /^https?:/.test(u)) { if (++n >= 2) break; } else n = 0;
+    last = u;
+    await sleep(700);
+  }
+  await sleep(1500); // 等 SPA 初始化
+}
+
+// 带重试的 MAIN world 注入（页面重定向会导致 Frame removed，自动重试）
+async function injectWithRetry(tabId, func, args) {
+  let lastErr;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const [r] = await chrome.scripting.executeScript({ target: { tabId }, world: "MAIN", func, args });
+      return r.result;
+    } catch (e) {
+      lastErr = e;
+      if (/removed|frame|context|destroyed|cannot read/i.test(String(e)) && attempt < 2) { await sleep(2000); continue; }
+      throw e;
+    }
+  }
+  throw lastErr;
+}
+
 // ---------- 方式2：浏览器标签页（cookie 认证，过 Turnstile/WAF）----------
 async function checkinByTab(site) {
   const base = site.base_url.replace(/\/+$/, "");
@@ -88,12 +124,9 @@ async function checkinByTab(site) {
   try {
     // 打开同源控制台页（自动带 httpOnly cookie；新版会重定向到 /dashboard）
     tab = await chrome.tabs.create({ url: base + "/console", active: false });
-    await sleep(4500);
-    // MAIN world 注入：与页面共享 window（turnstile 必须在主世界）
-    const [result] = await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      world: "MAIN",
-      func: async (savedToken) => {
+    await waitTabStable(tab.id);
+    // MAIN world 注入：与页面共享 window（turnstile 必须在主世界），带重定向重试
+    const result = await injectWithRetry(tab.id, async (savedToken) => {
         const jget = async (url, opt) => {
           const r = await fetch(url, opt);
           return { status: r.status, text: await r.text() };
@@ -182,8 +215,11 @@ async function checkinByTab(site) {
           const cr = await jget(url, { method: "POST", credentials: "include", headers: authH() });
           let cd = {};
           try { cd = JSON.parse(cr.text); } catch (e) {}
-          const success = !!cd.success;
-          const message = cd.message || ("HTTP " + cr.status);
+          let message = cd.message || ("HTTP " + cr.status);
+          // “今日已签到/重复签到”视为成功（今天的签到目标已达成），不算失败
+          const already = !cd.success && /已签到|已经签|重复签|already|checked/i.test(message);
+          const success = !!cd.success || already;
+          if (already) message = "今日已签到";
 
           // ---------- 5. 查询余额 ----------
           let remain = null;
@@ -193,14 +229,12 @@ async function checkinByTab(site) {
             if (qd.success && qd.data) remain = Number(qd.data.quota || 0) - Number(qd.data.used_quota || 0);
           } catch (e) {}
 
-          return { success, gained: cd.data || 0, message, remain };
+          return { success, already, gained: cd.data || 0, message, remain };
         } catch (e) {
           return { success: false, message: String(e) };
         }
-      },
-      args: [site.token || ""],
-    });
-    return { ...result.result, viaBrowser: true };
+      }, [site.token || ""]);
+    return { ...result, viaBrowser: true };
   } catch (e) {
     return { success: false, message: "标签页签到失败: " + String(e), viaBrowser: true };
   } finally {
@@ -245,13 +279,23 @@ async function detectSite(tabId) {
           }
 
           const got = await obtainToken();
-          const token = got.token;
-          const headers = { "Accept": "application/json" };
-          if (token) headers["Authorization"] = "Bearer " + token;
-          const r = await fetch("/api/user/self", { credentials: "include", headers });
-          const text = await r.text();
-          let d = {};
-          try { d = JSON.parse(text); } catch (e) {}
+          // 第一次：带 token 请求；失败则第二次去掉 Authorization 纯 cookie 再试
+          let r, d = {};
+          const trySelf = async (useToken) => {
+            const h = { "Accept": "application/json" };
+            if (useToken && got.token) h["Authorization"] = "Bearer " + got.token;
+            const resp = await fetch("/api/user/self", { credentials: "include", headers: h });
+            const text = await resp.text();
+            let j = {};
+            try { j = JSON.parse(text); } catch (e) {}
+            return { resp, j };
+          };
+          let first = await trySelf(true);
+          r = first.resp; d = first.j;
+          if (!(d.success && d.data) && got.token) {
+            const second = await trySelf(false);
+            if (second.j && second.j.success) { r = second.resp; d = second.j; }
+          }
 
           if (d.success && d.data) {
             return {
@@ -259,7 +303,8 @@ async function detectSite(tabId) {
               base_url: location.origin,
               user_id: d.data.id,
               username: d.data.username || d.data.display_name || "",
-              token: "", // 临时 JWT 15分钟过期，不保存；签到时靠 cookie 重新 refresh
+              // 仅旧版本地长期令牌才保存；refresh 得到的临时 JWT 15分钟过期，不保存
+              token: got.source === "storage" ? got.token : "",
               authSource: got.source,
             };
           }
@@ -298,7 +343,7 @@ async function runAll(manual = false) {
     if (i > 0) await sleep(3000 + Math.floor(Math.random() * 12000));
     const r = await checkinOne(sites[i]);
     results.push(r);
-    await addLog({ time: new Date().toISOString(), site: r.name, success: r.success, message: r.message, gained: r.gained, remain: r.remain, manual });
+    await addLog({ time: new Date().toISOString(), name: r.name, success: r.success, already: r.already, message: r.message, gained: r.gained, remain: r.remain, manual });
   }
   // 推送 Telegram
   const settings = await getSettings();
@@ -330,9 +375,9 @@ function buildReport(results) {
   msg += "共 " + results.length + " 站，成功 " + ok + "，失败 " + (results.length - ok) + "\n\n";
   results.forEach(r => {
     const icon = r.success ? "✅" : "❌";
-    const gain = r.success && r.gained ? "+" + fmt(r.gained) : "";
+    const state = r.already ? "今日已签" : ((r.success && r.gained) ? "+" + fmt(r.gained) : "");
     const remain = r.remain != null ? "余额:" + fmt(r.remain) : "";
-    msg += icon + " " + mask(r.name) + " " + gain + " " + remain + "\n";
+    msg += icon + " " + mask(r.name || "站点") + " " + state + " " + remain + "\n";
     if (!r.success) msg += "   ↳ " + r.message + "\n";
   });
   return msg;
@@ -410,6 +455,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           const sites = await getSites();
           const dup = sites.find(s => s.base_url === msg.site.base_url && String(s.user_id || "") === String(msg.site.user_id || ""));
           if (dup) { sendResponse({ error: "该站点（网址+用户ID）已存在" }); break; }
+          // 名称兜底：没填就用域名
+          if (!msg.site.name || !msg.site.name.trim()) {
+            try { msg.site.name = new URL(msg.site.base_url).hostname.replace(/^www\./, ""); } catch (e) { msg.site.name = "站点"; }
+          }
           msg.site.id = uid();
           msg.site.enabled = true;
           sites.push(msg.site);
@@ -446,7 +495,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           const site = sites.find(s => s.id === msg.id);
           if (!site) { sendResponse({ error: "站点不存在" }); break; }
           const r = await checkinOne(site);
-          await addLog({ time: new Date().toISOString(), site: r.name, success: r.success, message: r.message, gained: r.gained, remain: r.remain, manual: true });
+          await addLog({ time: new Date().toISOString(), name: r.name, success: r.success, already: r.already, message: r.message, gained: r.gained, remain: r.remain, manual: true });
           sendResponse({ ok: true, result: r });
           break;
         }

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "NewAPI 多站自动签到",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAq/QE/6QIbG8sFj+TKyeQ3HmpvKp2iezFdNKgcyMy8ZIYiIT2JsC7/zK+gvaIxHIKMjwruK9gbZOa/560hkDaR69eqPucLaz1lrr8uNiOjlcTm4AXuSat61wFxMCy1p+9uznGQqmv4QmAwwVeIfX+0xbes6LlHpgfirsKPt8T9rr5gcnJAG99H0QBc/qjkHxDTqZpyo03DPTZAB969tG6teYkk6buW6I3jNEJQNBuHQtxk6jqt6tr3oqRY4lgwz+FfOurVAUtvVRFYBQuRUH8rMkSHoggfb8fqsHjhppIFVA1VBjTfcnduC2jDmMXBCJdpDYeuCcvqTecoZZblEvP6QIDAQAB",
   "description": "多站点 NewAPI 中转站自动签到，支持 Turnstile/WAF 站点，随机时间，Telegram 通知",
   "permissions": ["storage", "alarms", "tabs", "scripting", "notifications"],
