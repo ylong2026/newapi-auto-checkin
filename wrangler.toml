@@ -1,0 +1,20 @@
+name = "newapi-auto-checkin"
+main = "worker.js"
+compatibility_date = "2024-09-01"
+
+# 每小时整点触发，Worker 内部判断是否到了今天的随机小时
+[triggers]
+crons = ["0 * * * *"]
+
+# ============================================================
+# 以下两项不在此文件中配置，请到 Cloudflare 控制台设置：
+# Workers & Pages → 你的 Worker → Settings → Variables & Bindings
+#
+# 1. 添加 Variable：
+#    变量名：ADMIN_TOKEN
+#    值：你自己设的管理密码（登录管理页用）
+#
+# 2. 添加 KV Namespace Binding：
+#    变量名：KV
+#    选择一个 KV namespace（没有就先去 Workers → KV 创建一个）
+# ============================================================
