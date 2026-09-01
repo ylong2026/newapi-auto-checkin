@@ -233,7 +233,11 @@ async function loadNextTime() {
   if (d.next && d.next !== "未设置") $("nextTime").textContent = "下次: " + d.next;
 }
 
-function fmt(n) { return Number(n || 0).toLocaleString(); }
+function fmt(n) {
+  const v = Number(n || 0);
+  const d = Math.abs(v) >= 1 ? 2 : 4;
+  return v.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: d });
+}
 
 // 初始化
 loadSites();

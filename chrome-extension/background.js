@@ -45,7 +45,11 @@ async function addLog(entry) {
 // ---------- 工具 ----------
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 const mask = n => n.length > 3 ? n.slice(0, 3) + "***" : n + "***";
-const fmt = n => Number(n || 0).toLocaleString();
+const fmt = n => {
+  const v = Number(n || 0);
+  const d = Math.abs(v) >= 1 ? 2 : 4;
+  return v.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: d });
+};
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 // ---------- 请求头 ----------
@@ -164,49 +168,88 @@ async function checkinByTab(site) {
             "Accept": "application/json, text/plain, */*",
           });
 
-          // ---------- 2. 读取站点配置，判断是否需要 Turnstile ----------
-          let needTs = false, siteKey = "";
+          // ---------- 2. 读取站点配置，判断是否需要 Turnstile、取额度换算单位 ----------
+          let needTs = false, siteKey = "", unit = 500000;
           try {
             const sr = await jget("/api/status", { credentials: "include" });
             const sd = JSON.parse(sr.text).data || {};
             needTs = !!sd.turnstile_check;
             siteKey = sd.turnstile_site_key || "";
+            if (Number(sd.quota_per_unit) > 0) unit = Number(sd.quota_per_unit);
           } catch (e) {}
 
           // ---------- 3. 需要人机验证时，在页面内渲染 Turnstile 拿 token ----------
-          let tsToken = "";
+          let tsToken = "", tsStage = "";
           if (needTs) {
             if (!siteKey) return { success: false, message: "站点开启了人机验证但未返回 sitekey" };
-            tsToken = await new Promise((resolve) => {
+            // 后台标签页会被浏览器标记为 hidden，Turnstile 可能因此不自动执行；伪装为可见
+            try {
+              const visDef = { get: () => "visible", configurable: true };
+              const hidDef = { get: () => false, configurable: true };
+              Object.defineProperty(document, "visibilityState", visDef);
+              Object.defineProperty(document, "webkitVisibilityState", visDef);
+              Object.defineProperty(document, "hidden", hidDef);
+              Object.defineProperty(document, "webkitHidden", hidDef);
+              document.hasFocus = () => true;
+              window.dispatchEvent(new Event("visibilitychange"));
+            } catch (e) {}
+            const tsOutcome = await new Promise((resolve) => {
               let settled = false;
-              const done = (v) => { if (!settled) { settled = true; resolve(v); } };
-              const timer = setTimeout(() => done(""), 25000);
-              const render = () => {
+              const done = (token, stage) => { if (!settled) { settled = true; resolve({ token, stage }); } };
+              const timer = setTimeout(() => done("", "timeout"), 24000);
+              let rendered = false;
+              const doRender = () => {
+                if (rendered || !window.turnstile) return;
+                rendered = true;
                 try {
+                  const old = document.querySelector("[data-nac-box]");
+                  if (old) old.remove();
                   const box = document.createElement("div");
-                  box.style.cssText = "position:fixed;left:-9999px;top:0;width:300px;height:80px;";
+                  box.setAttribute("data-nac-box", "1");
+                  // 放在视口内（移出屏幕会被 IntersectionObserver 判为不可见而不执行），近乎透明
+                  box.style.cssText = "position:fixed;right:0;bottom:0;width:300px;height:70px;opacity:0.01;z-index:2147483647;pointer-events:none;";
                   document.body.appendChild(box);
-                  window.turnstile.render(box, {
+                  const opts = {
                     sitekey: siteKey,
-                    callback: (t) => { clearTimeout(timer); done(t); },
-                    "error-callback": () => { clearTimeout(timer); done(""); },
-                    "timeout-callback": () => { clearTimeout(timer); done(""); },
+                    callback: (t) => { clearTimeout(timer); done(t, "ok"); },
+                    "error-callback": () => { clearTimeout(timer); done("", "error"); },
+                    "timeout-callback": () => { clearTimeout(timer); done("", "timeout"); },
+                  };
+                  // turnstile.ready 保证内部就绪后再 render，避免 render 时未初始化
+                  if (typeof window.turnstile.ready === "function") window.turnstile.ready(() => {
+                    try { window.turnstile.render(box, opts); } catch (e) { clearTimeout(timer); done("", "render_error"); }
                   });
-                } catch (e) { clearTimeout(timer); done(""); }
+                  else { try { window.turnstile.render(box, opts); } catch (e) { clearTimeout(timer); done("", "render_error"); } }
+                } catch (e) { clearTimeout(timer); done("", "render_error"); }
               };
-              if (window.turnstile) { render(); return; }
-              const old = document.querySelector("script[data-nac-ts]");
+              // 已存在（页面自己加载过 turnstile）直接渲染
+              if (window.turnstile) { doRender(); return; }
+              // 动态加载官方脚本；不依赖 onload 时机（onload 触发时 window.turnstile 可能尚未挂载），
+              // 改为加载后轮询等待 window.turnstile 出现，再 ready()->render()
+              const old = document.querySelector("script[data-nac-ts],script#cf-turnstile");
               if (old) old.remove();
               const s = document.createElement("script");
+              s.id = "cf-turnstile";
               s.setAttribute("data-nac-ts", "1");
-              // 注意：不能加 async/defer，否则 turnstile.ready 报错
               s.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
-              s.onload = () => setTimeout(render, 200);
-              s.onerror = () => { clearTimeout(timer); done(""); };
+              s.async = true;
+              s.onerror = () => { clearTimeout(timer); done("", "script_error"); };
               document.head.appendChild(s);
+              const deadline = Date.now() + 12000;
+              const waitTs = setInterval(() => {
+                if (window.turnstile) { clearInterval(waitTs); doRender(); }
+                else if (Date.now() > deadline) { clearInterval(waitTs); clearTimeout(timer); done("", "script_timeout"); }
+              }, 80);
             });
+            tsToken = tsOutcome.token; tsStage = tsOutcome.stage;
             if (!tsToken) {
-              return { success: false, message: "人机验证(Turnstile)未通过：当前网络可能无法访问 challenges.cloudflare.com，开启代理后重试" };
+              let tip;
+              if (tsStage === "script_error") tip = "验证脚本加载失败：浏览器无法连接 challenges.cloudflare.com，请开启代理后重试";
+              else if (tsStage === "script_timeout") tip = "验证脚本加载后未初始化：网络无法稳定访问 Cloudflare，请开启代理（与手动签到同一网络）后重试";
+              else if (tsStage === "render_error") tip = "人机验证组件渲染异常，请刷新站点页面后重试";
+              else if (tsStage === "timeout") tip = "人机验证超时：多半是网络无法访问 Cloudflare 验证服务，请开启代理（与手动签到同一网络）后重试";
+              else tip = "人机验证未通过（" + tsStage + "），请确认网络可访问 Cloudflare 后重试";
+              return { success: false, message: tip, tsStage };
             }
           }
 
@@ -221,15 +264,17 @@ async function checkinByTab(site) {
           const success = !!cd.success || already;
           if (already) message = "今日已签到";
 
-          // ---------- 5. 查询余额 ----------
+          // ---------- 5. 查询余额（按站点 quota_per_unit 换算成页面显示的额度单位）----------
           let remain = null;
           try {
             const q = await jget("/api/user/self", { credentials: "include", headers: authH() });
             const qd = JSON.parse(q.text);
-            if (qd.success && qd.data) remain = Number(qd.data.quota || 0) - Number(qd.data.used_quota || 0);
+            if (qd.success && qd.data) remain = (Number(qd.data.quota || 0) - Number(qd.data.used_quota || 0)) / unit;
           } catch (e) {}
 
-          return { success, already, gained: cd.data || 0, message, remain };
+          // 本次签到奖励同样换算单位
+          const gained = (Number(cd.data) || 0) / unit;
+          return { success, already, gained, message, remain };
         } catch (e) {
           return { success: false, message: String(e) };
         }
