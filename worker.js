@@ -145,24 +145,24 @@ function page() {
 '<title>NewAPI 签到管理</title>'+
 '<style>'+
 '*{box-sizing:border-box;margin:0;padding:0}'+
-'body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#f5f5f7;color:#1d1d1f;padding:16px;max-width:680px;margin:0 auto}'+
-'h1{font-size:20px;margin-bottom:12px}'+
-'h2{font-size:15px;margin-bottom:10px}'+
-'.card{background:#fff;border-radius:12px;padding:14px;margin-bottom:14px;box-shadow:0 1px 3px rgba(0,0,0,.07)}'+
-'label{display:block;font-size:13px;font-weight:500;margin-bottom:3px}'+
-'.hint{font-size:11px;color:#999;font-weight:400;margin-left:4px}'+
-'input,textarea,select{width:100%;padding:9px;border:1px solid #ddd;border-radius:8px;font-size:13px;margin-bottom:9px;font-family:inherit}'+
-'textarea{resize:vertical;min-height:80px;font-family:monospace;font-size:12px}'+
-'button{padding:9px 16px;border:none;border-radius:8px;background:#0071e3;color:#fff;font-size:13px;cursor:pointer}'+
+'body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#f5f5f7;color:#1d1d1f;padding:12px;max-width:640px;margin:0 auto}'+
+'h1{font-size:18px;margin-bottom:10px}'+
+'h2{font-size:14px;margin-bottom:8px}'+
+'.card{background:#fff;border-radius:12px;padding:12px;margin-bottom:10px;box-shadow:0 1px 3px rgba(0,0,0,.07)}'+
+'label{display:block;font-size:12px;font-weight:500;margin-bottom:2px}'+
+'.hint{font-size:10.5px;color:#999;font-weight:400;margin-left:4px}'+
+'input,textarea,select{width:100%;padding:8px;border:1px solid #ddd;border-radius:8px;font-size:13px;margin-bottom:7px;font-family:inherit}'+
+'textarea{resize:vertical;min-height:64px;font-family:monospace;font-size:12px}'+
+'button{padding:8px 14px;border:none;border-radius:8px;background:#0071e3;color:#fff;font-size:13px;cursor:pointer}'+
 'button:hover{background:#0077ed}'+
 'button.danger{background:#ff3b30}'+
 'button.ghost{background:#e8e8ed;color:#1d1d1f}'+
 'button:disabled{opacity:.5;cursor:not-allowed}'+
 '.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}'+
-'.tabs{display:flex;gap:4px;margin-bottom:14px;background:#fff;border-radius:10px;padding:4px;box-shadow:0 1px 3px rgba(0,0,0,.07)}'+
-'.tab{flex:1;padding:10px;border:none;background:transparent;color:#666;font-size:13px;border-radius:8px;cursor:pointer;font-weight:500}'+
+'.tabs{display:flex;gap:4px;margin-bottom:10px;background:#fff;border-radius:10px;padding:4px;box-shadow:0 1px 3px rgba(0,0,0,.07)}'+
+'.tab{flex:1;padding:9px;border:none;background:transparent;color:#666;font-size:13px;border-radius:8px;cursor:pointer;font-weight:500}'+
 '.tab.active{background:#0071e3;color:#fff}'+
-'.site-item{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid #f0f0f0}'+
+'.site-item{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #f0f0f0}'+
 '.site-item:last-child{border-bottom:none}'+
 '.site-name{font-size:14px;font-weight:500}'+
 '.site-url{font-size:11px;color:#999;margin-top:2px}'+
@@ -200,39 +200,29 @@ function page() {
 // Tab: 站点管理
 '<div id="tab-sites" class="tab-content">'+
 '  <div class="card">'+
-'    <h2>单个添加</h2>'+
-'    <details><summary>📌 一键提取 Token（推荐，不用手动复制）</summary>'+
-'      <div class="batch-hint" style="margin-top:8px">'+
-'        <b>这个书签能自动读取你登录的网站信息。用法：</b><br>'+
-'        ① 按住下面的蓝色链接，拖到浏览器<b>顶部书签栏</b>（平时存网页快捷方式那一排）<br>'+
-'        ② 打开你要添加的站点（如 tabitoken.com），<b>登录进去</b><br>'+
-'        ③ 在那个站点页面，点一下书签栏里的「一键提取本站信息」<br>'+
-'        ④ 自动跳回本页，名称/网址/Token 已填好，点「添加站点」即可<br>'+
-'        <span style="color:#ff3b30">⚠ 不是在本页点这个链接，是拖到书签栏后，在别的网站页面上点书签栏里的它</span>'+
-'      </div>'+
-'      <a id="bm" class="bookmarklet" href="#">一键提取本站信息</a>'+
-'    </details>'+
-'    <form id="addForm" style="margin-top:10px">'+
-'      <label>站点名称 <span class="hint">随便起，方便你认，如 tabitoken</span></label>'+
-'      <input name="name" placeholder="如 tabitoken" required>'+
-'      <label>网址 <span class="hint">站点首页地址，如 https://tabitoken.com，末尾不要加斜杠</span></label>'+
-'      <input name="base_url" placeholder="https://tabitoken.com" required>'+
-'      <label>Token <span class="hint">站点后台→个人设置→安全设置→生成令牌，sk- 开头，长期有效</span></label>'+
-'      <input name="token" placeholder="sk-xxxxxxxx" required>'+
-'      <label>用户 ID <span class="hint">可选。F12→Application→Local Storage→user→id；若签到失败提示"无权操作"则必须填</span></label>'+
-'      <input name="user_id" placeholder="数字 ID，部分站点需要">'+
-'      <button type="submit">添加站点</button>'+
-'    </form>'+
-'  </div>'+
-'  <div class="card">'+
-'    <h2>批量添加</h2>'+
-'    <div class="batch-hint">每行一个站点，用<b>英文逗号</b>分隔：<code>名称,网址,token,用户ID(可选)</code><br>例如：<code>tabitoken,https://tabitoken.com,sk-abc123,123</code><br>用户 ID 可省略，若签到失败提示"无权操作"则需要填</div>'+
-'    <textarea id="batchInput" placeholder="tabitoken,https://tabitoken.com,sk-abc123&#10;另一个站,https://example.com,sk-def456"></textarea>'+
-'    <button onclick="batchAdd()">批量添加</button>'+
-'  </div>'+
-'  <div class="card">'+
 '    <h2>已添加站点 <span id="siteCount" class="muted"></span></h2>'+
 '    <div id="siteList"></div>'+
+'  </div>'+
+'  <div class="card">'+
+'    <h2 id="formTitle">添加站点</h2>'+
+'    <form id="addForm">'+
+'      <label>站点名称 <span class="hint">自己好认就行，如 tabitoken</span></label>'+
+'      <input name="name" placeholder="如 tabitoken" required>'+
+'      <label>站点网址 <span class="hint">首页地址，末尾不要斜杠</span></label>'+
+'      <input name="base_url" placeholder="https://example.com" required>'+
+'      <label>系统访问令牌 <span class="hint">头像→个人设置→安全设置→系统访问令牌→生成，复制整串。注意不是左侧「令牌」菜单里调用大模型的 Key</span></label>'+
+'      <input name="token" placeholder="粘贴系统访问令牌" required>'+
+'      <label>数字用户 ID <span class="hint">个人设置页里的纯数字 ID，和令牌配套，建议填写</span></label>'+
+'      <input name="user_id" placeholder="纯数字 ID">'+
+'      <div class="row"><button type="submit" id="submitBtn">添加站点</button><button type="button" class="ghost hidden" id="cancelEdit" onclick="cancelEdit()">取消编辑</button></div>'+
+'    </form>'+
+'    <details style="margin-top:12px"><summary>批量添加 / 一键提取（展开）</summary>'+
+'      <div class="batch-hint" style="margin-top:8px">每行一个，英文逗号分隔：<code>名称,网址,系统访问令牌,数字ID</code></div>'+
+'      <textarea id="batchInput" placeholder="名称,https://example.com,令牌,12345"></textarea>'+
+'      <button onclick="batchAdd()">批量添加</button>'+
+'      <div class="batch-hint" style="margin-top:10px">在已登录的目标站点页面点书签，可自动带回信息：<b>先把下方链接拖到浏览器书签栏</b>，再到目标站点页面点它。</div>'+
+'      <a id="bm" class="bookmarklet" href="#">一键提取本站信息</a>'+
+'    </details>'+
 '  </div>'+
 '</div>'+
 
@@ -253,16 +243,13 @@ function page() {
 '<div id="tab-settings" class="tab-content hidden">'+
 '  <div class="card">'+
 '    <h2>Telegram 通知</h2>'+
-'    <label>Bot Token <span class="hint">Telegram 找 @BotFather，发 /newbot 获取</span></label>'+
+'    <label>Bot Token <span class="hint">找 @BotFather 发 /newbot 获取</span></label>'+
 '    <input id="tg_token" placeholder="123456:ABC-DEF...">'+
-'    <label>Chat ID <span class="hint">Telegram 找 @userinfobot，点 Start 获取</span></label>'+
+'    <label>Chat ID <span class="hint">找 @userinfobot 点 Start 获取</span></label>'+
 '    <input id="tg_chat" placeholder="123456789">'+
-'    <div class="row"><label style="margin:0;font-size:13px"><input type="checkbox" id="tg_enabled" style="width:auto;margin-right:6px">启用 Telegram 通知</label></div>'+
-'    <div class="row" style="margin-top:10px"><button onclick="saveSettings()">保存设置</button><button class="ghost" onclick="testTG()">发送测试</button></div>'+
-'  </div>'+
-'  <div class="card">'+
-'    <h2>说明</h2>'+
-'    <p class="muted" style="line-height:1.6">每天北京时间 0:00~23:00 之间随机一个整点自动签到，多个站点间隔 3~15 秒。签到结果会推送到你的 Telegram。也可以在上方「立即签到全部」手动触发。</p>'+
+'    <div class="row"><label style="margin:0;font-size:13px"><input type="checkbox" id="tg_enabled" style="width:auto;margin-right:6px">启用通知</label></div>'+
+'    <div class="row" style="margin-top:8px"><button onclick="saveSettings()">保存</button><button class="ghost" onclick="testTG()">发测试</button></div>'+
+'    <p class="muted" style="margin-top:10px;line-height:1.5;font-size:11px">每天北京时间 0~23 点随机一个整点自动签到一次，多站间隔 3~15 秒，结果推送到此。</p>'+
 '  </div>'+
 '</div>'+
 
@@ -313,15 +300,18 @@ function page() {
 '  }catch(e){alert("初始化错误:"+e.message);}'+
 '}'+
 
+'let editingId="";'+
 'async function loadSites(){'+
 '  try{'+
 '  const d=await api("/api/sites");'+
 '  $("siteCount").textContent=d.sites?("("+d.sites.length+")"):"";'+
 '  const el=$("siteList");'+
-'  if(!d.sites||!d.sites.length){el.innerHTML=\'<p class="muted">还没有站点，在上方添加</p>\';return;}'+
-'  el.innerHTML=d.sites.map(s=>\'<div class="site-item"><div><div class="site-name">\'+s.name+\'</div><div class="site-url">\'+s.base_url+(s.user_id?\' · ID:\'+s.user_id:\'\')+\'</div></div><button class="danger" data-del="\'+s.id+\'">删除</button></div>\').join("");'+
+'  if(!d.sites||!d.sites.length){el.innerHTML=\'<p class="muted">还没有站点，在下方添加</p>\';return;}'+
+'  el.innerHTML=d.sites.map(s=>\'<div class="site-item"><div><div class="site-name">\'+s.name+\'</div><div class="site-url">\'+s.base_url+(s.user_id?\' · ID:\'+s.user_id:\'\')+\'</div></div><div class="row" style="gap:6px"><button class="ghost" data-edit="\'+s.id+\'" style="padding:6px 12px">编辑</button><button class="danger" data-del="\'+s.id+\'" style="padding:6px 12px">删除</button></div></div>\').join("");'+
 '  }catch(e){$("siteList").innerHTML=\'<p style="color:#ff3b30">加载失败:\'+e.message+\'</p>\';}'+
 '}'+
+'function fillForm(s){editingId=s.id;$("addForm").name.value=s.name;$("addForm").base_url.value=s.base_url;$("addForm").token.value=s.token;$("addForm").user_id.value=s.user_id||"";$("formTitle").textContent="编辑站点："+s.name;$("submitBtn").textContent="保存修改";$("cancelEdit").classList.remove("hidden");window.scrollTo({top:0,behavior:"smooth"});}'+
+'function cancelEdit(){editingId="";$("addForm").reset();$("formTitle").textContent="添加站点";$("submitBtn").textContent="添加站点";$("cancelEdit").classList.add("hidden");}'+
 
 'async function batchAdd(){'+
 '  const text=$("batchInput").value.trim();'+
@@ -370,7 +360,10 @@ function page() {
 
 'document.addEventListener("click",async e=>{'+
 '  if(e.target.matches("[data-del]")){'+
-'    if(confirm("确定删除这个站点？")){await api("/api/sites/"+e.target.dataset.del,{method:"DELETE"});loadSites();}'+
+'    if(confirm("确定删除这个站点？")){await api("/api/sites/"+e.target.dataset.del,{method:"DELETE"});if(editingId===e.target.dataset.del)cancelEdit();loadSites();}'+
+'  }'+
+'  if(e.target.matches("[data-edit]")){'+
+'    const d=await api("/api/sites");const s=(d.sites||[]).find(x=>x.id===e.target.dataset.edit);if(s)fillForm(s);'+
 '  }'+
 '  if(e.target.matches("[data-checkin]")){'+
 '    const btn=e.target;btn.disabled=true;btn.textContent="签到中...";'+
@@ -379,7 +372,7 @@ function page() {
 '  }'+
 '});'+
 
-'$("addForm").addEventListener("submit",async e=>{e.preventDefault();const fd=new FormData(e.target);const d=await api("/api/sites",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(Object.fromEntries(fd.entries()))});if(d.ok){e.target.reset();loadSites();alert("添加成功");}else{alert("添加失败："+(d.error||"未知错误"));}});'+
+'$("addForm").addEventListener("submit",async e=>{e.preventDefault();const fd=Object.fromEntries(new FormData(e.target).entries());const wasEdit=!!editingId;let d;if(editingId){d=await api("/api/sites/"+editingId,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(fd)});}else{d=await api("/api/sites",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(fd)});}if(d.ok){cancelEdit();loadSites();alert(wasEdit?"已保存修改":"添加成功");}else{alert("操作失败："+(d.error||"未知错误"));}});'+
 '</script></body></html>';
 }
 
@@ -420,6 +413,17 @@ async function handleApi(request, env) {
   const dm = p.match(/^\/api\/sites\/(.+)$/);
   if (dm && request.method==="DELETE") {
     const sites = (await getSites(env)).filter(s=>s.id!==dm[1]);
+    await saveSites(env, sites);
+    return json({ok:true});
+  }
+  if (dm && request.method==="PUT") {
+    const b = await request.json();
+    const sites = await getSites(env);
+    const i = sites.findIndex(s=>s.id===dm[1]);
+    if (i<0) return json({error:"站点不存在"},404);
+    const dup = sites.find(s=>s.id!==dm[1] && s.base_url===(b.base_url||sites[i].base_url) && String(s.user_id||"")===String(b.user_id||sites[i].user_id||""));
+    if (dup) return json({error:"该站点（网址+用户ID）已存在"},409);
+    sites[i] = {...sites[i], name:b.name??sites[i].name, base_url:b.base_url??sites[i].base_url, token:b.token??sites[i].token, user_id:b.user_id??sites[i].user_id};
     await saveSites(env, sites);
     return json({ok:true});
   }
