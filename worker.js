@@ -26,13 +26,15 @@ const saveToday   = async (env,v) => env.KV.put("today", JSON.stringify(v));
 
 // ---------- NewAPI 交互（仅需 token） ----------
 function headers(site) {
-  return {
+  const h = {
     "Authorization": "Bearer " + site.token,
     "Content-Type": "application/json",
     "Accept": "application/json",
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36",
     "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
   };
+  if (site.user_id) h["new-api-user"] = String(site.user_id);
+  return h;
 }
 
 async function checkIn(site) {
@@ -213,12 +215,14 @@ function page() {
 '      <input name="base_url" placeholder="https://tabitoken.com" required>'+
 '      <label>Token <span class="hint">站点后台→个人设置→安全设置→生成令牌，sk- 开头，长期有效</span></label>'+
 '      <input name="token" placeholder="sk-xxxxxxxx" required>'+
+'      <label>用户 ID <span class="hint">可选。F12→Application→Local Storage→user→id；若签到失败提示"无权操作"则必须填</span></label>'+
+'      <input name="user_id" placeholder="数字 ID，部分站点需要">'+
 '      <button type="submit">添加站点</button>'+
 '    </form>'+
 '  </div>'+
 '  <div class="card">'+
 '    <h2>批量添加</h2>'+
-'    <div class="batch-hint">每行一个站点，用<b>英文逗号</b>分隔：<code>名称,网址,token</code><br>例如：<code>tabitoken,https://tabitoken.com,sk-abc123</code><br>网址和 token 在同一行，不会搞混</div>'+
+'    <div class="batch-hint">每行一个站点，用<b>英文逗号</b>分隔：<code>名称,网址,token,用户ID(可选)</code><br>例如：<code>tabitoken,https://tabitoken.com,sk-abc123,123</code><br>用户 ID 可省略，若签到失败提示"无权操作"则需要填</div>'+
 '    <textarea id="batchInput" placeholder="tabitoken,https://tabitoken.com,sk-abc123&#10;另一个站,https://example.com,sk-def456"></textarea>'+
 '    <button onclick="batchAdd()">批量添加</button>'+
 '  </div>'+
@@ -296,9 +300,9 @@ function page() {
 
 'async function init(){'+
 '  const origin=location.origin;'+
-'  $("bm").href="javascript:(function(){try{var t=localStorage.getItem(\'token\')||\'\';var d=btoa(JSON.stringify({name:location.hostname.split(\'.\')[0],url:location.origin,token:t}));location.href=\'"+origin+"/?import=\'+d;}catch(e){alert(\'提取失败，请先登录站点\');}})();";'+
+'  $("bm").href="javascript:(function(){try{var t=localStorage.getItem(\'token\')||\'\';var u=JSON.parse(localStorage.getItem(\'user\')||\'{}\');var d=btoa(JSON.stringify({name:location.hostname.split(\'.\')[0],url:location.origin,token:t,userId:u.id||\'\'}));location.href=\'"+origin+"/?import=\'+d;}catch(e){alert(\'提取失败，请先登录站点\');}})();";'+
 '  const imp=new URLSearchParams(location.search).get("import");'+
-'  if(imp){try{const d=JSON.parse(atob(imp));$("addForm").name.value=d.name||"";$("addForm").base_url.value=d.url||"";$("addForm").token.value=d.token||"";}catch(e){}}'+
+'  if(imp){try{const d=JSON.parse(atob(imp));$("addForm").name.value=d.name||"";$("addForm").base_url.value=d.url||"";$("addForm").token.value=d.token||"";$("addForm").user_id.value=d.userId||"";}catch(e){}}'+
 '  document.querySelectorAll(".tab").forEach(t=>t.addEventListener("click",()=>switchTab(t.dataset.tab)));'+
 '  loadSites();'+
 '}'+
@@ -318,7 +322,7 @@ function page() {
 '  const sites=[];'+
 '  for(const line of lines){'+
 '    const parts=line.split(",").map(p=>p.trim());'+
-'    if(parts.length>=3&&parts[0]&&parts[1]&&parts[2]){sites.push({name:parts[0],base_url:parts[1],token:parts[2]});}'+
+'    if(parts.length>=3&&parts[0]&&parts[1]&&parts[2]){sites.push({name:parts[0],base_url:parts[1],token:parts[2],user_id:parts[3]||""});}'+
 '  }'+
 '  if(!sites.length){alert("格式不对，每行应为：名称,网址,token");return;}'+
 '  const d=await api("/api/sites/batch",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sites})});'+
@@ -381,7 +385,7 @@ async function handleApi(request, env) {
     const b = await request.json();
     if (!b.name||!b.base_url||!b.token) return json({error:"缺少字段"},400);
     const sites = await getSites(env);
-    sites.push({id:uid(),name:b.name,base_url:b.base_url,token:b.token});
+    sites.push({id:uid(),name:b.name,base_url:b.base_url,token:b.token,user_id:b.user_id||""});
     await saveSites(env, sites);
     return json({ok:true});
   }
@@ -392,7 +396,7 @@ async function handleApi(request, env) {
     const sites = await getSites(env);
     let added = 0;
     for (const s of b.sites) {
-      if (s.name&&s.base_url&&s.token) { sites.push({id:uid(),name:s.name,base_url:s.base_url,token:s.token}); added++; }
+      if (s.name&&s.base_url&&s.token) { sites.push({id:uid(),name:s.name,base_url:s.base_url,token:s.token,user_id:s.user_id||""}); added++; }
     }
     await saveSites(env, sites);
     return json({ok:true, added});
