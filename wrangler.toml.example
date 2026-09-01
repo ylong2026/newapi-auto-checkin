@@ -1,0 +1,25 @@
+name = "newapi-auto-checkin"
+main = "worker.js"
+compatibility_date = "2024-09-01"
+
+# 每小时整点触发，Worker 内部判断是否到了今天的随机小时
+[triggers]
+crons = ["0 * * * *"]
+
+# ============================================================
+# 部署方式一（推荐，全程网页操作）：
+# 在 Cloudflare 控制台 Connect to Git 部署后，到 Worker → Settings 设置：
+#   1. Variables → 添加 ADMIN_TOKEN = 你的管理密码
+#   2. KV Bindings → 添加变量名 KV，选择一个 KV namespace
+# 不需要修改此文件。
+#
+# 部署方式二（命令行 wrangler deploy）：
+# 复制本文件为 wrangler.toml，然后取消下面两行的注释并填入你自己的信息：
+#
+# [[kv_namespaces]]
+# binding = "KV"
+# id = "你的 KV namespace ID"
+#
+# [vars]
+# ADMIN_TOKEN = "你的管理密码"
+# ============================================================
