@@ -82,7 +82,7 @@ async function detectCurrentTab() {
       let msg = "当前页面不是已登录的 NewAPI 站点";
       if (d.message) msg += "（" + d.message + "）";
       if (d.debug) {
-        msg += " [token:" + (d.debug.hasToken ? "有" : "无") + " keys:" + (d.debug.lsKeys || []).join(",") + "]";
+        msg += " [令牌来源:" + (d.debug.tokenSource || "无") + "]";
       }
       $("detectInfo").textContent = msg;
       $("autoAddBtn").classList.add("hidden");

@@ -86,72 +86,121 @@ async function checkinByTab(site) {
   const base = site.base_url.replace(/\/+$/, "");
   let tab;
   try {
+    // 打开同源控制台页（自动带 httpOnly cookie；新版会重定向到 /dashboard）
     tab = await chrome.tabs.create({ url: base + "/console", active: false });
-    await sleep(4000);
-    // 注入脚本：自动从 localStorage 读 token，cookie + token 双重认证
+    await sleep(4500);
+    // MAIN world 注入：与页面共享 window（turnstile 必须在主世界）
     const [result] = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
-      func: async (savedToken, userId) => {
+      world: "MAIN",
+      func: async (savedToken) => {
+        const jget = async (url, opt) => {
+          const r = await fetch(url, opt);
+          return { status: r.status, text: await r.text() };
+        };
         try {
-          // 优先用保存的 token，没有就遍历 localStorage 找
-          let token = savedToken;
+          // ---------- 1. 获取访问令牌 ----------
+          let token = savedToken || "";
           if (!token) {
-            for (let i = 0; i < localStorage.length; i++) {
-              try {
-                const obj = JSON.parse(localStorage.getItem(localStorage.key(i)));
-                if (obj && obj.token) { token = obj.token; break; }
-              } catch (e) {}
+            for (const store of [localStorage, sessionStorage]) {
+              for (let i = 0; i < store.length; i++) {
+                try {
+                  const o = JSON.parse(store.getItem(store.key(i)));
+                  if (o && o.token) { token = o.token; break; }
+                } catch (e) {}
+              }
+              if (token) break;
             }
           }
-          const headers = {
+          if (!token) {
+            // 新版 NewAPI：httpOnly cookie + /api/user/auth/refresh 换 15 分钟 JWT
+            try {
+              const rr = await jget("/api/user/auth/refresh", {
+                method: "POST", credentials: "include",
+                headers: { "Content-Type": "application/json" }, body: "{}",
+              });
+              const rj = JSON.parse(rr.text);
+              if (rj.data && rj.data.access_token) token = rj.data.access_token;
+            } catch (e) {}
+          }
+          if (!token) return { success: false, message: "未登录或登录已过期，请在浏览器里重新登录该站点" };
+
+          const authH = () => ({
+            "Authorization": "Bearer " + token,
             "Content-Type": "application/json",
             "Accept": "application/json, text/plain, */*",
-            "X-Requested-With": "XMLHttpRequest",
-          };
-          if (token) headers["Authorization"] = "Bearer " + token;
-          if (userId) headers["new-api-user"] = String(userId);
-          const r = await fetch("/api/user/checkin", { method: "POST", headers, credentials: "include" });
-          const text = await r.text();
-          let d = {};
-          try { d = JSON.parse(text); } catch (e) {}
-          return { status: r.status, success: !!d.success, gained: d.data || 0, message: d.message || ("HTTP " + r.status) };
+          });
+
+          // ---------- 2. 读取站点配置，判断是否需要 Turnstile ----------
+          let needTs = false, siteKey = "";
+          try {
+            const sr = await jget("/api/status", { credentials: "include" });
+            const sd = JSON.parse(sr.text).data || {};
+            needTs = !!sd.turnstile_check;
+            siteKey = sd.turnstile_site_key || "";
+          } catch (e) {}
+
+          // ---------- 3. 需要人机验证时，在页面内渲染 Turnstile 拿 token ----------
+          let tsToken = "";
+          if (needTs) {
+            if (!siteKey) return { success: false, message: "站点开启了人机验证但未返回 sitekey" };
+            tsToken = await new Promise((resolve) => {
+              let settled = false;
+              const done = (v) => { if (!settled) { settled = true; resolve(v); } };
+              const timer = setTimeout(() => done(""), 25000);
+              const render = () => {
+                try {
+                  const box = document.createElement("div");
+                  box.style.cssText = "position:fixed;left:-9999px;top:0;width:300px;height:80px;";
+                  document.body.appendChild(box);
+                  window.turnstile.render(box, {
+                    sitekey: siteKey,
+                    callback: (t) => { clearTimeout(timer); done(t); },
+                    "error-callback": () => { clearTimeout(timer); done(""); },
+                    "timeout-callback": () => { clearTimeout(timer); done(""); },
+                  });
+                } catch (e) { clearTimeout(timer); done(""); }
+              };
+              if (window.turnstile) { render(); return; }
+              const old = document.querySelector("script[data-nac-ts]");
+              if (old) old.remove();
+              const s = document.createElement("script");
+              s.setAttribute("data-nac-ts", "1");
+              // 注意：不能加 async/defer，否则 turnstile.ready 报错
+              s.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+              s.onload = () => setTimeout(render, 200);
+              s.onerror = () => { clearTimeout(timer); done(""); };
+              document.head.appendChild(s);
+            });
+            if (!tsToken) {
+              return { success: false, message: "人机验证(Turnstile)未通过：当前网络可能无法访问 challenges.cloudflare.com，开启代理后重试" };
+            }
+          }
+
+          // ---------- 4. 签到（turnstile 通过 URL query 传递）----------
+          const url = "/api/user/checkin" + (tsToken ? "?turnstile=" + encodeURIComponent(tsToken) : "");
+          const cr = await jget(url, { method: "POST", credentials: "include", headers: authH() });
+          let cd = {};
+          try { cd = JSON.parse(cr.text); } catch (e) {}
+          const success = !!cd.success;
+          const message = cd.message || ("HTTP " + cr.status);
+
+          // ---------- 5. 查询余额 ----------
+          let remain = null;
+          try {
+            const q = await jget("/api/user/self", { credentials: "include", headers: authH() });
+            const qd = JSON.parse(q.text);
+            if (qd.success && qd.data) remain = Number(qd.data.quota || 0) - Number(qd.data.used_quota || 0);
+          } catch (e) {}
+
+          return { success, gained: cd.data || 0, message, remain };
         } catch (e) {
           return { success: false, message: String(e) };
         }
       },
-      args: [site.token || "", site.user_id || ""],
+      args: [site.token || ""],
     });
-    const r = result.result;
-    // 查询余额
-    let remain = null;
-    if (r.success) {
-      try {
-        const [q] = await chrome.scripting.executeScript({
-          target: { tabId: tab.id },
-          func: async (savedToken, userId) => {
-            let token = savedToken;
-            if (!token) {
-              for (let i = 0; i < localStorage.length; i++) {
-                try {
-                  const obj = JSON.parse(localStorage.getItem(localStorage.key(i)));
-                  if (obj && obj.token) { token = obj.token; break; }
-                } catch (e) {}
-              }
-            }
-            const headers = { "Accept": "application/json" };
-            if (token) headers["Authorization"] = "Bearer " + token;
-            if (userId) headers["new-api-user"] = String(userId);
-            const r = await fetch("/api/user/self", { headers, credentials: "include" });
-            const d = await r.json();
-            if (d.success && d.data) return { remain: Number(d.data.quota || 0) - Number(d.data.used_quota || 0) };
-            return null;
-          },
-          args: [site.token || "", site.user_id || ""],
-        });
-        if (q.result) remain = q.result.remain;
-      } catch (e) {}
-    }
-    return { success: r.success, gained: r.gained, message: r.message, remain, viaBrowser: true };
+    return { ...result.result, viaBrowser: true };
   } catch (e) {
     return { success: false, message: "标签页签到失败: " + String(e), viaBrowser: true };
   } finally {
@@ -164,47 +213,39 @@ async function detectSite(tabId) {
   try {
     const [result] = await chrome.scripting.executeScript({
       target: { tabId },
+      world: "MAIN",
       func: async () => {
         try {
-          // 收集所有可能的 token 来源
-          let token = "", lsId = null, lsName = "";
-          const lsKeys = [];
-
-          // 1. 遍历 localStorage 所有 key，找包含 token 的对象
-          for (let i = 0; i < localStorage.length; i++) {
-            const k = localStorage.key(i);
-            lsKeys.push(k);
-            const v = localStorage.getItem(k);
-            if (!v) continue;
-            // 尝试解析为 JSON
-            try {
-              const obj = JSON.parse(v);
-              if (obj && typeof obj === "object") {
-                if (obj.token && !token) token = obj.token;
-                if (obj.id && !lsId) lsId = obj.id;
-                if (obj.username && !lsName) lsName = obj.username;
-                if (obj.display_name && !lsName) lsName = obj.display_name;
-              }
-            } catch (e) {
-              // 不是 JSON，可能直接是 token 字符串
-              if (!token && v.length > 20 && !v.includes(" ") && !v.startsWith("{") && !v.startsWith("[")) {
-                if (k.toLowerCase().includes("token")) token = v;
+          // 通用取 token：① localStorage/sessionStorage 长期 token（旧版）
+          // ② POST /api/user/auth/refresh 换临时 JWT（新版 httpOnly cookie 机制）
+          async function obtainToken() {
+            // 1. 遍历 localStorage / sessionStorage
+            for (const store of [localStorage, sessionStorage]) {
+              for (let i = 0; i < store.length; i++) {
+                const v = store.getItem(store.key(i));
+                if (!v) continue;
+                try {
+                  const obj = JSON.parse(v);
+                  if (obj && obj.token) return { token: obj.token, source: "storage" };
+                } catch (e) {}
               }
             }
-          }
-
-          // 2. 也检查 sessionStorage
-          for (let i = 0; i < sessionStorage.length; i++) {
-            const k = sessionStorage.key(i);
-            const v = sessionStorage.getItem(k);
-            if (!v) continue;
+            // 2. refresh token 换取（依赖 httpOnly cookie，credentials 自动带）
             try {
-              const obj = JSON.parse(v);
-              if (obj && typeof obj === "object" && obj.token && !token) token = obj.token;
+              const rr = await fetch("/api/user/auth/refresh", {
+                method: "POST",
+                credentials: "include",
+                headers: { "Content-Type": "application/json" },
+                body: "{}",
+              });
+              const rj = await rr.json();
+              if (rj && rj.data && rj.data.access_token) return { token: rj.data.access_token, source: "refresh" };
             } catch (e) {}
+            return { token: "", source: "none" };
           }
 
-          // 3. 请求用户信息（带 token，同时带 cookie）
+          const got = await obtainToken();
+          const token = got.token;
           const headers = { "Accept": "application/json" };
           if (token) headers["Authorization"] = "Bearer " + token;
           const r = await fetch("/api/user/self", { credentials: "include", headers });
@@ -216,16 +257,18 @@ async function detectSite(tabId) {
             return {
               ok: true,
               base_url: location.origin,
-              user_id: d.data.id || lsId,
-              username: d.data.username || d.data.display_name || lsName,
-              token: token || "",
+              user_id: d.data.id,
+              username: d.data.username || d.data.display_name || "",
+              token: "", // 临时 JWT 15分钟过期，不保存；签到时靠 cookie 重新 refresh
+              authSource: got.source,
             };
           }
-          // 返回详细诊断信息
+          const lsKeys = [];
+          for (let i = 0; i < localStorage.length; i++) lsKeys.push(localStorage.key(i));
           return {
             ok: false,
             message: "接口返回: " + (d.message || ("HTTP " + r.status)),
-            debug: { status: r.status, hasToken: !!token, lsKeys: lsKeys.slice(0, 20), bodyStart: text.slice(0, 150) },
+            debug: { status: r.status, tokenSource: got.source, lsKeys: lsKeys.slice(0, 20) },
           };
         } catch (e) {
           return { ok: false, message: "请求异常: " + String(e) };
@@ -240,22 +283,8 @@ async function detectSite(tabId) {
 
 // ---------- 签到单个站点 ----------
 async function checkinOne(site) {
-  // 有 token 时先尝试直接 fetch（快），没有 token 直接用标签页 cookie 模式
-  if (site.token) {
-    let r = await checkinByFetch(site);
-    if (!r.needBrowser) {
-      if (r.success) {
-        try {
-          const base = site.base_url.replace(/\/+$/, "");
-          const resp = await fetch(base + "/api/user/self", { headers: buildHeaders(site) });
-          const d = await resp.json();
-          if (d.success && d.data) r.remain = Number(d.data.quota || 0) - Number(d.data.used_quota || 0);
-        } catch (e) {}
-      }
-      return { id: site.id, name: site.name, ...r };
-    }
-  }
-  // 标签页模式（cookie 认证，可过 Turnstile/WAF）
+  // 统一走标签页模式：真实浏览器环境，兼容 长期token / localStorage / refresh-JWT，
+  // 并能在页面内完成 Turnstile 人机验证、绕过 WAF
   const r = await checkinByTab(site);
   return { id: site.id, name: site.name, ...r };
 }
