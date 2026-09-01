@@ -77,6 +77,7 @@ async function detectCurrentTab() {
       $("autoAddBtn").dataset.base = d.base_url;
       $("autoAddBtn").dataset.uid = d.user_id;
       $("autoAddBtn").dataset.uname = d.username || "";
+      $("autoAddBtn").dataset.token = d.token || "";
     } else {
       $("detectInfo").textContent = "当前页面不是已登录的 NewAPI 站点（请先登录站点，再点扩展图标）";
       $("autoAddBtn").classList.add("hidden");
@@ -102,7 +103,7 @@ $("autoAddBtn").addEventListener("click", async () => {
   if (!name) {
     try { name = new URL(base_url).hostname.replace(/^www\./, ""); } catch (e) { name = "站点" + Date.now(); }
   }
-  const add = await send({ action: "addSite", site: { name, base_url, user_id, token: "" } });
+  const add = await send({ action: "addSite", site: { name, base_url, user_id, token: btn.dataset.token || "" } });
   if (add.ok) {
     cancelEdit();
     loadSites();

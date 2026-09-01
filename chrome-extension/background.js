@@ -88,11 +88,19 @@ async function checkinByTab(site) {
   try {
     tab = await chrome.tabs.create({ url: base + "/console", active: false });
     await sleep(4000);
-    // 注入脚本：用 cookie 认证签到（token 可选，有就带上更保险）
+    // 注入脚本：自动从 localStorage 读 token，cookie + token 双重认证
     const [result] = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
-      func: async (token, userId) => {
+      func: async (savedToken, userId) => {
         try {
+          // 优先用保存的 token，没有就从 localStorage 读
+          let token = savedToken;
+          if (!token) {
+            try {
+              const u = JSON.parse(localStorage.getItem("user") || "{}");
+              token = u.token || "";
+            } catch (e) {}
+          }
           const headers = {
             "Content-Type": "application/json",
             "Accept": "application/json, text/plain, */*",
@@ -118,7 +126,14 @@ async function checkinByTab(site) {
       try {
         const [q] = await chrome.scripting.executeScript({
           target: { tabId: tab.id },
-          func: async (token, userId) => {
+          func: async (savedToken, userId) => {
+            let token = savedToken;
+            if (!token) {
+              try {
+                const u = JSON.parse(localStorage.getItem("user") || "{}");
+                token = u.token || "";
+              } catch (e) {}
+            }
             const headers = { "Accept": "application/json" };
             if (token) headers["Authorization"] = "Bearer " + token;
             if (userId) headers["new-api-user"] = String(userId);
@@ -147,14 +162,28 @@ async function detectSite(tabId) {
       target: { tabId },
       func: async () => {
         try {
-          const r = await fetch("/api/user/self", { credentials: "include", headers: { "Accept": "application/json" } });
+          // NewAPI 登录态存在 localStorage 的 user 对象里
+          let token = "", lsId = null, lsName = "";
+          const userStr = localStorage.getItem("user");
+          if (userStr) {
+            try {
+              const u = JSON.parse(userStr);
+              token = u.token || "";
+              lsId = u.id || null;
+              lsName = u.username || u.display_name || "";
+            } catch (e) {}
+          }
+          const headers = { "Accept": "application/json" };
+          if (token) headers["Authorization"] = "Bearer " + token;
+          const r = await fetch("/api/user/self", { credentials: "include", headers });
           const d = await r.json();
           if (d.success && d.data) {
             return {
               ok: true,
               base_url: location.origin,
-              user_id: d.data.id,
-              username: d.data.username || d.data.display_name || "",
+              user_id: d.data.id || lsId,
+              username: d.data.username || d.data.display_name || lsName,
+              token: token,
             };
           }
           return { ok: false, message: d.message || "未登录或不是 NewAPI 站点" };
