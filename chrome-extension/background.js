@@ -5,6 +5,19 @@
 const STORAGE_KEY = "nac_sites";
 const SETTINGS_KEY = "nac_settings";
 const LOG_KEY = "nac_logs";
+const LAST_DATE_KEY = "nac_last_date";
+
+// 今天的日期（北京时间）
+function todayBJ() {
+  return new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10);
+}
+async function isCheckedToday() {
+  const d = await chrome.storage.local.get(LAST_DATE_KEY);
+  return d[LAST_DATE_KEY] === todayBJ();
+}
+async function markCheckedToday() {
+  await chrome.storage.local.set({ [LAST_DATE_KEY]: todayBJ() });
+}
 
 // ---------- 存储 ----------
 async function getSites() {
@@ -164,6 +177,8 @@ async function runAll(manual = false) {
   }
   // 更新 badge
   updateBadge(results);
+  // 自动签到后标记今天已签（手动签到不标记，方便反复测试）
+  if (!manual) await markCheckedToday();
   return { results };
 }
 
@@ -207,36 +222,45 @@ function updateBadge(results) {
   setTimeout(() => chrome.action.setBadgeText({ text: "" }), 10000);
 }
 
-// ---------- 定时 ----------
-async function scheduleNext() {
-  const settings = await getSettings();
-  // 每天北京时间 0-23 点随机选一个整点
-  const hour = Math.floor(Math.random() * 24);
-  const now = new Date();
-  const bj = new Date(now.getTime() + 8 * 3600 * 1000);
-  const target = new Date(bj);
-  target.setHours(hour, Math.floor(Math.random() * 60), 0, 0);
-  if (target <= bj) target.setDate(target.getDate() + 1);
-  const targetUtc = new Date(target.getTime() - 8 * 3600 * 1000);
-  chrome.alarms.create("daily-checkin", { when: targetUtc.getTime() });
-  console.log("下次签到时间（北京时间）:", target.toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" }));
+// ---------- 定时：启动时检查 + 每小时兜底 ----------
+async function ensureHourlyAlarm() {
+  const alarms = await chrome.alarms.getAll();
+  if (!alarms.find(a => a.name === "hourly-check")) {
+    chrome.alarms.create("hourly-check", { periodInMinutes: 60 });
+  }
+}
+
+async function tryAutoCheckin(reason) {
+  if (await isCheckedToday()) {
+    console.log("今天已签到，跳过（" + reason + "）");
+    return false;
+  }
+  const sites = (await getSites()).filter(s => s.enabled !== false);
+  if (!sites.length) return false;
+  console.log("开始自动签到（" + reason + "）");
+  await runAll(false);
+  return true;
 }
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
-  if (alarm.name === "daily-checkin") {
-    await runAll(false);
-    await scheduleNext();
+  if (alarm.name === "hourly-check") {
+    await tryAutoCheckin("每小时兜底");
   }
 });
 
 // 安装时初始化
 chrome.runtime.onInstalled.addListener(async () => {
-  await scheduleNext();
+  await ensureHourlyAlarm();
 });
+
+// 浏览器启动时：延迟 30~180 秒后检查今天是否已签，没签就自动签
 chrome.runtime.onStartup.addListener(async () => {
-  // 浏览器启动时检查是否有未完成的签到
-  const alarms = await chrome.alarms.getAll();
-  if (!alarms.find(a => a.name === "daily-checkin")) await scheduleNext();
+  await ensureHourlyAlarm();
+  const delay = 30000 + Math.floor(Math.random() * 150000); // 30~180秒
+  console.log("浏览器启动，" + Math.round(delay / 1000) + "秒后检查签到");
+  setTimeout(async () => {
+    await tryAutoCheckin("浏览器启动");
+  }, delay);
 });
 
 // ---------- 消息监听（与 popup 通信）----------
@@ -315,9 +339,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           break;
         }
         case "getNextTime": {
-          const alarms = await chrome.alarms.getAll();
-          const a = alarms.find(x => x.name === "daily-checkin");
-          sendResponse({ next: a ? new Date(a.scheduledTime).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" }) : "未设置" });
+          const done = await isCheckedToday();
+          sendResponse({ next: done ? "今日已签到 ✓" : "今日待签（打开浏览器后自动）" });
           break;
         }
         default:
