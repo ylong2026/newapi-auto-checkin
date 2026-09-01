@@ -61,29 +61,25 @@ $("cancelEdit").addEventListener("click", cancelEdit);
 
 // 自动检测当前标签页是否为 NewAPI 站点
 async function detectCurrentTab() {
-  if (editingId) { $("autoDetect").classList.add("hidden"); return; }
-  $("autoDetect").classList.remove("hidden");
+  if (editingId) return;
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab || !tab.url || !tab.url.startsWith("http")) {
-      $("detectInfo").textContent = "请先在浏览器中打开并登录你的 NewAPI 站点，再点扩展图标";
-      $("autoAddBtn").classList.add("hidden");
+      $("autoDetect").classList.add("hidden");
       return;
     }
     const d = await send({ action: "detectSite", tabId: tab.id });
     if (d.ok) {
       $("detectInfo").textContent = "检测到：" + (d.username || d.base_url) + " (ID:" + d.user_id + ")";
-      $("autoAddBtn").classList.remove("hidden");
+      $("autoDetect").classList.remove("hidden");
       $("autoAddBtn").dataset.base = d.base_url;
       $("autoAddBtn").dataset.uid = d.user_id;
       $("autoAddBtn").dataset.uname = d.username || "";
     } else {
-      $("detectInfo").textContent = "当前页面不是已登录的 NewAPI 站点（请先登录站点，再点扩展图标）";
-      $("autoAddBtn").classList.add("hidden");
+      $("autoDetect").classList.add("hidden");
     }
   } catch (e) {
-    $("detectInfo").textContent = "检测失败，请在已登录的 NewAPI 站点页面上点扩展图标";
-    $("autoAddBtn").classList.add("hidden");
+    $("autoDetect").classList.add("hidden");
   }
 }
 
