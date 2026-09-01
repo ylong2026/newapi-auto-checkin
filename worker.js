@@ -195,8 +195,15 @@ function page() {
 '<div id="tab-sites" class="tab-content">'+
 '  <div class="card">'+
 '    <h2>单个添加</h2>'+
-'    <details><summary>📌 一键提取（推荐，拖到书签栏）</summary>'+
-'      <p class="muted" style="margin:6px 0">把下面链接拖到浏览器书签栏，打开任意 NewAPI 站点并登录，点一下书签自动跳转回来并填好：</p>'+
+'    <details><summary>📌 一键提取 Token（推荐，不用手动复制）</summary>'+
+'      <div class="batch-hint" style="margin-top:8px">'+
+'        <b>这个书签能自动读取你登录的网站信息。用法：</b><br>'+
+'        ① 按住下面的蓝色链接，拖到浏览器<b>顶部书签栏</b>（平时存网页快捷方式那一排）<br>'+
+'        ② 打开你要添加的站点（如 tabitoken.com），<b>登录进去</b><br>'+
+'        ③ 在那个站点页面，点一下书签栏里的「一键提取本站信息」<br>'+
+'        ④ 自动跳回本页，名称/网址/Token 已填好，点「添加站点」即可<br>'+
+'        <span style="color:#ff3b30">⚠ 不是在本页点这个链接，是拖到书签栏后，在别的网站页面上点书签栏里的它</span>'+
+'      </div>'+
 '      <a id="bm" class="bookmarklet" href="#">一键提取本站信息</a>'+
 '    </details>'+
 '    <form id="addForm" style="margin-top:10px">'+
