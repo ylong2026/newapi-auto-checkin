@@ -79,7 +79,12 @@ async function detectCurrentTab() {
       $("autoAddBtn").dataset.uname = d.username || "";
       $("autoAddBtn").dataset.token = d.token || "";
     } else {
-      $("detectInfo").textContent = "当前页面不是已登录的 NewAPI 站点（请先登录站点，再点扩展图标）";
+      let msg = "当前页面不是已登录的 NewAPI 站点";
+      if (d.message) msg += "（" + d.message + "）";
+      if (d.debug) {
+        msg += " [token:" + (d.debug.hasToken ? "有" : "无") + " keys:" + (d.debug.lsKeys || []).join(",") + "]";
+      }
+      $("detectInfo").textContent = msg;
       $("autoAddBtn").classList.add("hidden");
     }
   } catch (e) {

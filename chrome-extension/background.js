@@ -93,13 +93,15 @@ async function checkinByTab(site) {
       target: { tabId: tab.id },
       func: async (savedToken, userId) => {
         try {
-          // 优先用保存的 token，没有就从 localStorage 读
+          // 优先用保存的 token，没有就遍历 localStorage 找
           let token = savedToken;
           if (!token) {
-            try {
-              const u = JSON.parse(localStorage.getItem("user") || "{}");
-              token = u.token || "";
-            } catch (e) {}
+            for (let i = 0; i < localStorage.length; i++) {
+              try {
+                const obj = JSON.parse(localStorage.getItem(localStorage.key(i)));
+                if (obj && obj.token) { token = obj.token; break; }
+              } catch (e) {}
+            }
           }
           const headers = {
             "Content-Type": "application/json",
@@ -129,10 +131,12 @@ async function checkinByTab(site) {
           func: async (savedToken, userId) => {
             let token = savedToken;
             if (!token) {
-              try {
-                const u = JSON.parse(localStorage.getItem("user") || "{}");
-                token = u.token || "";
-              } catch (e) {}
+              for (let i = 0; i < localStorage.length; i++) {
+                try {
+                  const obj = JSON.parse(localStorage.getItem(localStorage.key(i)));
+                  if (obj && obj.token) { token = obj.token; break; }
+                } catch (e) {}
+              }
             }
             const headers = { "Accept": "application/json" };
             if (token) headers["Authorization"] = "Bearer " + token;
@@ -162,33 +166,69 @@ async function detectSite(tabId) {
       target: { tabId },
       func: async () => {
         try {
-          // NewAPI 登录态存在 localStorage 的 user 对象里
+          // 收集所有可能的 token 来源
           let token = "", lsId = null, lsName = "";
-          const userStr = localStorage.getItem("user");
-          if (userStr) {
+          const lsKeys = [];
+
+          // 1. 遍历 localStorage 所有 key，找包含 token 的对象
+          for (let i = 0; i < localStorage.length; i++) {
+            const k = localStorage.key(i);
+            lsKeys.push(k);
+            const v = localStorage.getItem(k);
+            if (!v) continue;
+            // 尝试解析为 JSON
             try {
-              const u = JSON.parse(userStr);
-              token = u.token || "";
-              lsId = u.id || null;
-              lsName = u.username || u.display_name || "";
+              const obj = JSON.parse(v);
+              if (obj && typeof obj === "object") {
+                if (obj.token && !token) token = obj.token;
+                if (obj.id && !lsId) lsId = obj.id;
+                if (obj.username && !lsName) lsName = obj.username;
+                if (obj.display_name && !lsName) lsName = obj.display_name;
+              }
+            } catch (e) {
+              // 不是 JSON，可能直接是 token 字符串
+              if (!token && v.length > 20 && !v.includes(" ") && !v.startsWith("{") && !v.startsWith("[")) {
+                if (k.toLowerCase().includes("token")) token = v;
+              }
+            }
+          }
+
+          // 2. 也检查 sessionStorage
+          for (let i = 0; i < sessionStorage.length; i++) {
+            const k = sessionStorage.key(i);
+            const v = sessionStorage.getItem(k);
+            if (!v) continue;
+            try {
+              const obj = JSON.parse(v);
+              if (obj && typeof obj === "object" && obj.token && !token) token = obj.token;
             } catch (e) {}
           }
+
+          // 3. 请求用户信息（带 token，同时带 cookie）
           const headers = { "Accept": "application/json" };
           if (token) headers["Authorization"] = "Bearer " + token;
           const r = await fetch("/api/user/self", { credentials: "include", headers });
-          const d = await r.json();
+          const text = await r.text();
+          let d = {};
+          try { d = JSON.parse(text); } catch (e) {}
+
           if (d.success && d.data) {
             return {
               ok: true,
               base_url: location.origin,
               user_id: d.data.id || lsId,
               username: d.data.username || d.data.display_name || lsName,
-              token: token,
+              token: token || "",
             };
           }
-          return { ok: false, message: d.message || "未登录或不是 NewAPI 站点" };
+          // 返回详细诊断信息
+          return {
+            ok: false,
+            message: "接口返回: " + (d.message || ("HTTP " + r.status)),
+            debug: { status: r.status, hasToken: !!token, lsKeys: lsKeys.slice(0, 20), bodyStart: text.slice(0, 150) },
+          };
         } catch (e) {
-          return { ok: false, message: "请求失败: " + String(e) };
+          return { ok: false, message: "请求异常: " + String(e) };
         }
       },
     });
