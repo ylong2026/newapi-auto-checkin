@@ -55,16 +55,23 @@ summary{cursor:pointer;font-size:11px;color:#0071e3;padding:2px 0}
   </div>
   <div class="card">
     <h2 id="formTitle">添加站点</h2>
+    <div id="autoDetect" class="hidden" style="margin-bottom:8px;padding:8px;background:#f0f4ff;border-radius:6px">
+      <div style="font-size:12px;margin-bottom:4px" id="detectInfo">检测到 NewAPI 站点</div>
+      <button type="button" id="autoAddBtn" style="width:100%">一键添加当前站点</button>
+    </div>
     <form id="addForm">
       <label>站点名称 <span class="hint">自己好认</span></label>
       <input name="name" placeholder="如 tabitoken" required>
       <label>站点网址 <span class="hint">首页地址，末尾不要斜杠</span></label>
       <input name="base_url" placeholder="https://example.com" required>
-      <label>系统访问令牌 <span class="hint">头像→个人设置→安全设置→系统访问令牌→生成，复制整串</span></label>
-      <input name="token" placeholder="粘贴系统访问令牌" required>
       <label>数字用户 ID <span class="hint">个人设置页的纯数字 ID，建议填写</span></label>
       <input name="user_id" placeholder="纯数字 ID">
-      <div class="row">
+      <details>
+        <summary>高级：系统访问令牌（可选）</summary>
+        <label style="margin-top:6px">系统访问令牌 <span class="hint">不填则用浏览器登录态自动签到</span></label>
+        <input name="token" placeholder="头像→个人设置→安全设置→系统访问令牌">
+      </details>
+      <div class="row" style="margin-top:8px">
         <button type="submit" id="submitBtn">添加站点</button>
         <button type="button" class="ghost hidden" id="cancelEdit">取消</button>
         <button type="button" class="ghost" id="runAllBtn" style="margin-left:auto">全部签到</button>

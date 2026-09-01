@@ -81,36 +81,35 @@ async function checkinByFetch(site) {
   }
 }
 
-// ---------- 方式2：浏览器标签页（过 Turnstile/WAF）----------
+// ---------- 方式2：浏览器标签页（cookie 认证，过 Turnstile/WAF）----------
 async function checkinByTab(site) {
   const base = site.base_url.replace(/\/+$/, "");
   let tab;
   try {
     tab = await chrome.tabs.create({ url: base + "/console", active: false });
-    // 等待页面加载
     await sleep(4000);
-    // 注入脚本执行签到
+    // 注入脚本：用 cookie 认证签到（token 可选，有就带上更保险）
     const [result] = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       func: async (token, userId) => {
         try {
           const headers = {
-            "Authorization": "Bearer " + token,
             "Content-Type": "application/json",
             "Accept": "application/json, text/plain, */*",
             "X-Requested-With": "XMLHttpRequest",
           };
+          if (token) headers["Authorization"] = "Bearer " + token;
           if (userId) headers["new-api-user"] = String(userId);
           const r = await fetch("/api/user/checkin", { method: "POST", headers, credentials: "include" });
           const text = await r.text();
           let d = {};
           try { d = JSON.parse(text); } catch (e) {}
-          return { status: r.status, success: !!d.success, gained: d.data || 0, message: d.message || ("HTTP " + r.status), raw: text.slice(0, 200) };
+          return { status: r.status, success: !!d.success, gained: d.data || 0, message: d.message || ("HTTP " + r.status) };
         } catch (e) {
           return { success: false, message: String(e) };
         }
       },
-      args: [site.token, site.user_id],
+      args: [site.token || "", site.user_id || ""],
     });
     const r = result.result;
     // 查询余额
@@ -120,14 +119,15 @@ async function checkinByTab(site) {
         const [q] = await chrome.scripting.executeScript({
           target: { tabId: tab.id },
           func: async (token, userId) => {
-            const headers = { "Authorization": "Bearer " + token, "Accept": "application/json" };
+            const headers = { "Accept": "application/json" };
+            if (token) headers["Authorization"] = "Bearer " + token;
             if (userId) headers["new-api-user"] = String(userId);
             const r = await fetch("/api/user/self", { headers, credentials: "include" });
             const d = await r.json();
             if (d.success && d.data) return { remain: Number(d.data.quota || 0) - Number(d.data.used_quota || 0) };
             return null;
           },
-          args: [site.token, site.user_id],
+          args: [site.token || "", site.user_id || ""],
         });
         if (q.result) remain = q.result.remain;
       } catch (e) {}
@@ -140,22 +140,54 @@ async function checkinByTab(site) {
   }
 }
 
+// ---------- 检测当前页面是否为 NewAPI 站点并提取信息 ----------
+async function detectSite(tabId) {
+  try {
+    const [result] = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: async () => {
+        try {
+          const r = await fetch("/api/user/self", { credentials: "include", headers: { "Accept": "application/json" } });
+          const d = await r.json();
+          if (d.success && d.data) {
+            return {
+              ok: true,
+              base_url: location.origin,
+              user_id: d.data.id,
+              username: d.data.username || d.data.display_name || "",
+            };
+          }
+          return { ok: false, message: d.message || "未登录或不是 NewAPI 站点" };
+        } catch (e) {
+          return { ok: false, message: "请求失败: " + String(e) };
+        }
+      },
+    });
+    return result.result;
+  } catch (e) {
+    return { ok: false, message: "无法注入页面: " + String(e) };
+  }
+}
+
 // ---------- 签到单个站点 ----------
 async function checkinOne(site) {
-  // 先尝试直接 fetch
-  let r = await checkinByFetch(site);
-  if (r.needBrowser) {
-    // 切换到标签页模式
-    r = await checkinByTab(site);
-  } else if (r.success) {
-    // 查询余额
-    try {
-      const base = site.base_url.replace(/\/+$/, "");
-      const resp = await fetch(base + "/api/user/self", { headers: buildHeaders(site) });
-      const d = await resp.json();
-      if (d.success && d.data) r.remain = Number(d.data.quota || 0) - Number(d.data.used_quota || 0);
-    } catch (e) {}
+  // 有 token 时先尝试直接 fetch（快），没有 token 直接用标签页 cookie 模式
+  if (site.token) {
+    let r = await checkinByFetch(site);
+    if (!r.needBrowser) {
+      if (r.success) {
+        try {
+          const base = site.base_url.replace(/\/+$/, "");
+          const resp = await fetch(base + "/api/user/self", { headers: buildHeaders(site) });
+          const d = await resp.json();
+          if (d.success && d.data) r.remain = Number(d.data.quota || 0) - Number(d.data.used_quota || 0);
+        } catch (e) {}
+      }
+      return { id: site.id, name: site.name, ...r };
+    }
   }
+  // 标签页模式（cookie 认证，可过 Turnstile/WAF）
+  const r = await checkinByTab(site);
   return { id: site.id, name: site.name, ...r };
 }
 
@@ -271,6 +303,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         case "getSites":
           sendResponse({ sites: await getSites() });
           break;
+        case "detectSite": {
+          const info = await detectSite(msg.tabId);
+          sendResponse(info);
+          break;
+        }
         case "addSite": {
           const sites = await getSites();
           const dup = sites.find(s => s.base_url === msg.site.base_url && String(s.user_id || "") === String(msg.site.user_id || ""));

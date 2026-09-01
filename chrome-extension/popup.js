@@ -42,11 +42,12 @@ function fillForm(s) {
   editingId = s.id;
   $("addForm").name.value = s.name;
   $("addForm").base_url.value = s.base_url;
-  $("addForm").token.value = s.token;
+  $("addForm").token.value = s.token || "";
   $("addForm").user_id.value = s.user_id || "";
   $("formTitle").textContent = "编辑站点：" + s.name;
   $("submitBtn").textContent = "保存修改";
   $("cancelEdit").classList.remove("hidden");
+  $("autoDetect").classList.add("hidden");
 }
 function cancelEdit() {
   editingId = "";
@@ -54,8 +55,59 @@ function cancelEdit() {
   $("formTitle").textContent = "添加站点";
   $("submitBtn").textContent = "添加站点";
   $("cancelEdit").classList.add("hidden");
+  detectCurrentTab();
 }
 $("cancelEdit").addEventListener("click", cancelEdit);
+
+// 自动检测当前标签页是否为 NewAPI 站点
+async function detectCurrentTab() {
+  if (editingId) return;
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab || !tab.url || !tab.url.startsWith("http")) {
+      $("autoDetect").classList.add("hidden");
+      return;
+    }
+    const d = await send({ action: "detectSite", tabId: tab.id });
+    if (d.ok) {
+      $("detectInfo").textContent = "检测到：" + (d.username || d.base_url) + " (ID:" + d.user_id + ")";
+      $("autoDetect").classList.remove("hidden");
+      $("autoAddBtn").dataset.base = d.base_url;
+      $("autoAddBtn").dataset.uid = d.user_id;
+      $("autoAddBtn").dataset.uname = d.username || "";
+    } else {
+      $("autoDetect").classList.add("hidden");
+    }
+  } catch (e) {
+    $("autoDetect").classList.add("hidden");
+  }
+}
+
+// 一键添加
+$("autoAddBtn").addEventListener("click", async () => {
+  const btn = $("autoAddBtn");
+  const base_url = btn.dataset.base;
+  const user_id = btn.dataset.uid;
+  const username = btn.dataset.uname;
+  // 检查是否已存在
+  const d = await send({ action: "getSites" });
+  const dup = (d.sites || []).find(s => s.base_url === base_url && String(s.user_id || "") === String(user_id || ""));
+  if (dup) { alert("该站点已添加过"); return; }
+  // 用域名作为默认名称
+  let name = username;
+  if (!name) {
+    try { name = new URL(base_url).hostname.replace(/^www\./, ""); } catch (e) { name = "站点" + Date.now(); }
+  }
+  const add = await send({ action: "addSite", site: { name, base_url, user_id, token: "" } });
+  if (add.ok) {
+    cancelEdit();
+    loadSites();
+    btn.textContent = "✅ 已添加";
+    setTimeout(() => { btn.textContent = "一键添加当前站点"; }, 2000);
+  } else {
+    alert("添加失败：" + (add.error || "未知错误"));
+  }
+});
 
 // 表单提交
 $("addForm").addEventListener("submit", async e => {
@@ -169,3 +221,4 @@ function fmt(n) { return Number(n || 0).toLocaleString(); }
 // 初始化
 loadSites();
 loadNextTime();
+detectCurrentTab();
